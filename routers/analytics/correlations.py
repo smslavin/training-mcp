@@ -74,16 +74,15 @@ def _activity_local_date(act: dict) -> str:
 def correlate_hrv_with_performance(
     after: str,
     before: Optional[str] = None,
-    athlete_id_override: Optional[str] = None,
 ) -> str:
     """
     Correlate daily HRV (rMSSD from HRV4Training via Dropbox) with same-day
     training performance over a date range.
 
-    For each day that has both an HRV reading and at least one activity, pairs
-    the rMSSD value with normalized power and HR efficiency (NP / avg HR).
-    Returns a day-by-day table and Pearson correlation coefficients for both
-    pairings.
+    For each day that has both an HRV reading and at least one Strava activity,
+    pairs the rMSSD value with normalized power (weighted_average_watts from Strava)
+    and HR efficiency (NP / avg HR). Returns a day-by-day table and Pearson
+    correlation coefficients for both pairings.
 
     Higher rMSSD generally indicates better recovery. A positive correlation
     with NP and HR efficiency suggests the HRV signal is tracking readiness well.
@@ -91,30 +90,31 @@ def correlate_hrv_with_performance(
     Args:
         after: Start date YYYY-MM-DD (inclusive).
         before: End date YYYY-MM-DD (inclusive). Defaults to today.
-        athlete_id_override: intervals.icu athlete ID override.
     """
-    aid = athlete_id(athlete_id_override)
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     newest = before or today
 
     hrv_by_date = load_hrv_by_date(after=after, before=newest)
 
-    with get_intervals_client() as c:
+    after_ts = int(datetime.strptime(after, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp())
+    newest_ts = int(datetime.strptime(newest, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp()) + 86400
+
+    with get_strava_client() as c:
         ra = c.get(
-            f"{INTERVALS_URL}/athlete/{aid}/activities",
-            params={"oldest": after, "newest": newest, "fields": "start_date_local,timezone,average_hr,normalized_power"},
+            f"{STRAVA_URL}/athlete/activities",
+            params={"after": after_ts, "before": newest_ts, "per_page": 200},
         )
-    handle_intervals_response(ra)
+    handle_strava_response(ra)
 
     # Group activities by local date, pick the one with the highest NP on that day
     activities_by_date: dict[str, dict] = {}
     for act in ra.json():
         d = _activity_local_date(act)
-        np_ = act.get("normalized_power") or 0
-        hr = act.get("average_hr") or 0
+        np_ = act.get("weighted_average_watts") or 0
+        hr = act.get("average_heartrate") or 0
         if np_ > 0 and hr > 0:
             existing = activities_by_date.get(d)
-            if existing is None or np_ > (existing.get("normalized_power") or 0):
+            if existing is None or np_ > (existing.get("weighted_average_watts") or 0):
                 activities_by_date[d] = act
 
     paired_dates = sorted(set(hrv_by_date) & set(activities_by_date))
@@ -131,8 +131,8 @@ def correlate_hrv_with_performance(
     for d in paired_dates:
         hrv = hrv_by_date[d]
         act = activities_by_date[d]
-        np_ = float(act["normalized_power"])
-        hr = float(act["average_hr"])
+        np_ = float(act["weighted_average_watts"])
+        hr = float(act["average_heartrate"])
         eff = np_ / hr
         hrv_vals.append(hrv)
         np_vals.append(np_)
