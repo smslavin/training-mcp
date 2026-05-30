@@ -239,12 +239,13 @@ def fitness_vs_segment_prs(
     athlete_id_override: Optional[str] = None,
 ) -> str:
     """
-    Correlate intervals.icu fitness metrics (CTL, ATL, form) with Strava segment
+    Correlate intervals.icu fitness metrics (CTL, ATL, TSB) with Strava segment
     effort times on a given segment.
 
     Fetches all of the athlete's efforts on the segment from Strava, then looks up
-    CTL, ATL, and form (TSB) from intervals.icu wellness for each effort date. Returns
-    a table and Pearson correlations between each fitness metric and elapsed time.
+    CTL and ATL from intervals.icu wellness for each effort date. TSB is computed
+    as CTL - ATL (positive = fresh, negative = fatigued). Returns a table and
+    Pearson correlations between each fitness metric and elapsed time.
 
     A negative correlation between CTL and elapsed time (higher fitness → faster time)
     supports the fitness model as a predictor of segment performance.
@@ -292,12 +293,15 @@ def fitness_vs_segment_prs(
     for e in efforts:
         d = _activity_local_date(e)
         w = wellness_by_date.get(d, {})
+        ctl = w.get("ctl")
+        atl = w.get("atl")
+        tsb = ctl - atl if (ctl is not None and atl is not None) else None  # positive = fresh, negative = fatigued
         rows_data.append({
             "date": d,
             "elapsed": e["elapsed_time"],
-            "ctl":  w.get("ctl"),
-            "atl":  w.get("atl"),
-            "form": w.get("form"),
+            "ctl": ctl,
+            "atl": atl,
+            "tsb": tsb,
         })
 
     rows_data.sort(key=lambda x: x["date"])
@@ -306,21 +310,21 @@ def fitness_vs_segment_prs(
     rows = [f"Segment: {segment_name}  (id={segment_id})"]
     rows.append(f"Efforts: {len(rows_data)}  ({oldest} – {newest})")
     rows.append("")
-    rows.append("Date         Time     CTL    ATL    Form")
+    rows.append("Date         Time     CTL    ATL    TSB")
     rows.append("-" * 46)
 
-    time_vals, ctl_vals, atl_vals, form_vals = [], [], [], []
+    time_vals, ctl_vals, atl_vals, tsb_vals = [], [], [], []
     for row in rows_data:
         mm, ss = divmod(row["elapsed"], 60)
         time_str = f"{mm}:{ss:02d}"
-        ctl_s  = f"{row['ctl']:5.1f}"  if row["ctl"]  is not None else "  n/a"
-        atl_s  = f"{row['atl']:5.1f}"  if row["atl"]  is not None else "  n/a"
-        form_s = f"{row['form']:5.1f}" if row["form"] is not None else "  n/a"
-        rows.append(f"{row['date']}   {time_str:>6}   {ctl_s}  {atl_s}  {form_s}")
+        ctl_s = f"{row['ctl']:5.1f}" if row["ctl"] is not None else "  n/a"
+        atl_s = f"{row['atl']:5.1f}" if row["atl"] is not None else "  n/a"
+        tsb_s = f"{row['tsb']:5.1f}" if row["tsb"] is not None else "  n/a"
+        rows.append(f"{row['date']}   {time_str:>6}   {ctl_s}  {atl_s}  {tsb_s}")
         time_vals.append(float(row["elapsed"]))
         ctl_vals.append(row["ctl"])
         atl_vals.append(row["atl"])
-        form_vals.append(row["form"])
+        tsb_vals.append(row["tsb"])
 
     def _corr_line(label, vals):
         pairs = [(t, v) for t, v in zip(time_vals, vals) if v is not None]
@@ -332,6 +336,6 @@ def fitness_vs_segment_prs(
     rows.append("")
     rows.append(_corr_line("Time vs CTL (fitness)", ctl_vals))
     rows.append(_corr_line("Time vs ATL (fatigue)", atl_vals))
-    rows.append(_corr_line("Time vs Form (TSB)   ", form_vals))
+    rows.append(_corr_line("Time vs TSB (form)   ", tsb_vals))
 
     return "\n".join(rows)
