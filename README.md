@@ -21,6 +21,7 @@ MCP server for training data — Strava activities, intervals.icu wellness and a
 - `intervals_get_activity_messages`, `intervals_post_activity_message`
 - `intervals_get_athlete`
 - `intervals_list_wellness`, `intervals_get_wellness`, `intervals_update_wellness`, `intervals_bulk_update_wellness`, `intervals_wellness_trend_alert`
+- `intervals_create_workout`, `intervals_create_workouts_bulk`, `intervals_list_events`
 
 **HRV4Training**
 - `get_hrv_data` — daily HRV metrics, sleep, and subjective wellness markers from a local CSV or Dropbox
@@ -100,6 +101,6 @@ training-mcp/
 ├── .env.example
 └── routers/
     ├── strava/            — activities, athlete, gear, routes, segments
-    ├── intervals/         — activities, athlete, hrv, wellness
+    ├── intervals/         — activities, athlete, events, hrv, wellness
     └── analytics/         — cross-source correlations
 ```
