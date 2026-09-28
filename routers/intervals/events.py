@@ -55,10 +55,15 @@ def intervals_create_workout(
     existing event in place instead of creating a duplicate, so it's safe to
     call again after tweaking a target mid-week.
 
-    For Ride/Run, description can use intervals.icu's structured workout syntax
-    (e.g. '[Workout "6x400m" ""\\nWarmup 900\\n[Repeat 6\\n [SteadyState 96 292 292]\\n
-    [Recovery 96 60 60]\\n]\\nCooldown 600\\n]') to push structured steps to a
-    compatible device. Swim doesn't support this syntax — use plain-English text.
+    description can use intervals.icu's structured workout syntax (Ride, Run and
+    Swim) to push structured steps to a compatible device. One step per "- " line:
+    optional cue text, then a duration (30s, 5m, 1h30m) or distance (400mtr, 2km —
+    "m" means minutes), then a target (75-86%, 69% LTHR, 88-91% Pace), then an
+    optional cadence (110-115rpm). A "Warmup"/"Cooldown" header line flags the
+    step below it; a "<label> Nx" header repeats the steps below it; blank lines
+    separate blocks. A step with no target (e.g. "- Static rest 10s") is a plain rest.
+    e.g. 'Warmup\\n- 10m 50-65%\\n\\nMain set 6x\\n- 30s 112-120%\\n- 15s 33%\\n\\nCooldown\\n- 10m 50%'.
+    %LTHR and %Pace targets need the matching threshold set in intervals.icu sport settings.
 
     category race flags (RACE_A/RACE_B/RACE_C) highlight the event differently
     on the calendar and in the fitness chart — use them for actual races, not
