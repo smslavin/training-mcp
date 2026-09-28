@@ -10,3 +10,6 @@ __pycache__/
 .beads-credential-key
 .beads/proxieddb/
 *.gate.lock*
+
+# Plan files: coach plans are licensed content, keep them out of this public repo
+plans/
