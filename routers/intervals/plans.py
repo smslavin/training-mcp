@@ -53,6 +53,24 @@ def build_events(
     return events
 
 
+def _unchanged(current: dict, payload: dict) -> bool:
+    """True when the calendar event already holds every field we would send.
+
+    intervals.icu stores notes without a type, and when it creates a
+    distance-based swim it sets moving_time from its own pace estimate, so
+    those two fields can differ without the workout having changed.
+    """
+    for k, v in payload.items():
+        have = current.get(k)
+        if k == "type" and payload.get("category") == "NOTE":
+            continue
+        if k == "moving_time" and have is not None and v is not None and abs(have - v) <= 60:
+            continue
+        if have != v:
+            return False
+    return True
+
+
 @mcp.tool()
 def plan_push_to_intervals(
     plan_file: str,
@@ -67,8 +85,9 @@ def plan_push_to_intervals(
     Put a plan file's workouts on the intervals.icu calendar.
 
     Re-pushing an edited plan updates its events in place (matched by
-    external_id) and, with prune, deletes events for workouts that were removed
-    from the file. Only events this tool created for this plan file are touched.
+    external_id), leaves events whose content is unchanged alone, and, with
+    prune, deletes events for workouts that were removed from the file. Only
+    events this tool created for this plan file are touched.
 
     Args:
         plan_file: File in the plans directory (TP_PLANS_DIR, default plans/),
@@ -95,14 +114,15 @@ def plan_push_to_intervals(
         r = c.get(f"{BASE_URL}/athlete/{aid}/events", params={"oldest": oldest, "newest": newest})
         handle_response(r)
         ours = {
-            e["external_id"]: e["id"]
+            e["external_id"]: e
             for e in r.json()
             if (e.get("external_id") or "").startswith(f"plan:{plan_key}:")
         }
         wanted = {e.external_id for e in events}
         creates = [e for e in events if e.external_id not in ours]
-        updates = [e for e in events if e.external_id in ours]
-        deletes = [(x, i) for x, i in ours.items() if x not in wanted] if prune else []
+        existing = [e for e in events if e.external_id in ours]
+        updates = [e for e in existing if not _unchanged(ours[e.external_id], _event_payload(e))]
+        deletes = [(x, e["id"]) for x, e in ours.items() if x not in wanted] if prune else []
 
         if not dry_run:
             if creates:
@@ -112,7 +132,7 @@ def plan_push_to_intervals(
                     json=[_event_payload(e) for e in creates],
                 ))
             for e in updates:
-                handle_response(c.put(f"{BASE_URL}/athlete/{aid}/events/{ours[e.external_id]}", json=_event_payload(e)))
+                handle_response(c.put(f"{BASE_URL}/athlete/{aid}/events/{ours[e.external_id]['id']}", json=_event_payload(e)))
             for _, event_id in deletes:
                 handle_response(c.delete(f"{BASE_URL}/athlete/{aid}/events/{event_id}"))
 
@@ -126,6 +146,7 @@ def plan_push_to_intervals(
         "dates": f"{oldest} ({start.strftime('%A')}) to {newest}",
         "created": len(creates),
         "updated": len(updates),
+        "unchanged": len(existing) - len(updates),
         "deleted": len(deletes),
         "notes": sum(1 for e in events if e.category == "NOTE"),
         "options": {"run_pace_as_power": run_pace_as_power, "bike_hr_as_power": bike_hr_as_power},

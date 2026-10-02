@@ -81,12 +81,24 @@ def test_dry_run_writes_nothing(setup):
     assert [m for m, _ in fake.calls] == ["GET"]
 
 
-def test_push_creates_then_updates_in_place(setup):
+def test_push_creates_then_leaves_unchanged_events_alone(setup):
     fake = setup(make_plan(RIDE, ADDED_RUN))
     assert run(dry_run=False)["created"] == 2
     again = run(dry_run=False)
-    assert (again["created"], again["updated"], again["deleted"]) == (0, 2, 0)
+    assert (again["created"], again["updated"], again["unchanged"], again["deleted"]) == (0, 0, 2, 0)
     assert len(fake.events) == 2
+    assert not any(method == "PUT" for method, _ in fake.calls)
+
+
+def test_only_changed_workouts_are_updated(setup, tmp_path):
+    fake = setup(make_plan(RIDE, ADDED_RUN))
+    run(dry_run=False)
+    longer = RIDE.model_copy(update={"planned_minutes": 90, "blocks": [Block(steps=[Step(name="ENDURANCE", seconds=5400, target=(50, 85))])]})
+    pf.save_plan(make_plan(longer, ADDED_RUN), tmp_path / f"{KEY}.json")
+    summary = run(dry_run=False)
+    assert (summary["updated"], summary["unchanged"]) == (1, 1)
+    ride = next(e for e in fake.events.values() if e["external_id"] == "plan:off-season:101")
+    assert ride["moving_time"] == 5400 and "1h30m" in ride["description"]
 
 
 def test_removed_workouts_are_pruned_but_other_events_are_not(setup):
@@ -104,3 +116,12 @@ def test_options_reach_the_workout_text(setup):
     setup(make_plan(RIDE))
     sample = run(bike_hr_as_power=True)["sample"]
     assert "LTHR" not in sample["description"] and "40-66%" in sample["description"]
+
+
+def test_server_side_normalisation_is_not_a_change():
+    note = {"category": "NOTE", "type": "Other", "name": "Day off", "moving_time": None}
+    assert push._unchanged({"category": "NOTE", "type": None, "name": "Day off"}, {k: v for k, v in note.items() if v is not None})
+    swim = {"category": "WORKOUT", "type": "Swim", "moving_time": 3252}
+    assert push._unchanged({**swim, "moving_time": 3255}, swim)
+    assert not push._unchanged({**swim, "moving_time": 3600}, swim)
+    assert not push._unchanged({**swim, "type": "Run"}, swim)
