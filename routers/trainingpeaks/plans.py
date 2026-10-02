@@ -6,6 +6,7 @@ from typing import Optional
 
 from app import mcp
 from client_trainingpeaks import get_client, handle_response, tp_user_id
+from plan_checks import check_plan
 from plan_format import plan_from_tp, plans_dir, save_plan
 
 
@@ -54,6 +55,7 @@ def tp_fetch_plan(
     keep_on_calendar: bool = False,
     filename: Optional[str] = None,
     overwrite: bool = False,
+    fix_obvious_errors: bool = True,
 ) -> str:
     """
     Fetch a TrainingPeaks training plan's workouts and save them as a plan file
@@ -74,6 +76,9 @@ def tp_fetch_plan(
             plans/). Defaults to a slug of the plan title.
         overwrite: Replace an existing file. Off by default so a re-fetch
             can't wipe edits to a plan.
+        fix_obvious_errors: Repair unambiguous coach data-entry errors (swim
+            distances entered 1000x too large). Every fix and every other
+            implausible value is listed in the result's warnings.
     """
     if keep_on_calendar and not start_date:
         raise ValueError("keep_on_calendar needs an explicit start_date")
@@ -109,6 +114,7 @@ def tp_fetch_plan(
     plan_workouts = [w for w in on_calendar if w["workoutId"] not in existing]
     skipped = len(on_calendar) - len(plan_workouts)
     plan, warnings = plan_from_tp(plan_workouts, plan_id, title, start)
+    warnings += check_plan(plan, fix=fix_obvious_errors)
     save_plan(plan, path)
 
     sports = Counter(w.sport for w in plan.workouts)
